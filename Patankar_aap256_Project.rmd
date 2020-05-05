@@ -1,0 +1,418 @@
+---
+title: "Patankar_aap256_Project.Rmd"
+author: "Ajinkya Patankar"
+date: "5/1/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Stat597 - Data Wrangling and Husbandry Project
+Fake Job Postings Analysis and Prediction
+
+Ajinkya Patankar 
+Net Id:- $aap256@scarletmail.rutgers.edu$
+Rutgers University, New Brunswick
+
+## R Markdown
+
+# Importing the Libraries
+
+```{r Importing the libraries}
+library(tidyverse) # metapackage with lots of helpful functions
+library(dslabs)
+library(dplyr)
+library(gridExtra)
+library(grid)
+library(tinytex)
+library(caret)
+library(lubridate)
+library(data.table)
+library(tidytext)
+library(stopwords)
+#library(qdap)
+library(readr)
+#library(rJava)
+library(tm)
+library(SnowballC)
+library(wordcloud)
+library("RColorBrewer")
+library(randomForest)
+library(tictoc)
+library(e1071)
+library("party")
+library("RCurl")
+library(recipes)
+library(tidyr)
+```
+
+
+# ##################################################################################################
+# Importing the data into a dataframe
+# ##################################################################################################
+
+```{r pressure, echo=FALSE}
+JobPosting_Data <- read.csv("C:/Users/ajink/Desktop/Data Wrangling and Husbandry/Project/fake_job_postings.csv",na.strings=c("", "NA"))
+JobPosting_Data = JobPosting_Data %>% na.omit()
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+# ##################################################################################################
+# Data Exploration
+# ##################################################################################################
+# List of unique columns
+
+```{r}
+column_names <- colnames(JobPosting_Data)
+#str(JobPosting_Data)
+
+
+unique_columns_count <-  JobPosting_Data %>% 
+  summarise(n_title = n_distinct(title),
+            n_location = n_distinct(location),
+            n_department = n_distinct(department),
+            n_salary_range = n_distinct(salary_range),
+            n_employment_type = n_distinct(employment_type),
+            n_required_experience = n_distinct(required_experience),
+            n_required_education = n_distinct(required_education),
+            n_industry = n_distinct(industry),
+            n_function = n_distinct(function.),
+            n_fraudulent = n_distinct(fraudulent))
+
+print(unique_columns_count)
+```
+
+
+# #################################################################################################
+# Distribution of jobs
+# #################################################################################################
+
+```{r}
+JobPosting_Data %>% group_by(fraudulent) %>%  ggplot(aes(fraudulent, group = fraudulent)) + 
+  geom_bar(aes(fill = fraudulent), stat = "count") + 
+  theme(axis.text.x = element_text(angle = 90, size = 10)) + 
+  geom_text(aes(label=..count..),stat='count',position=position_stack(vjust=0.5)) + 
+  ggtitle("Genuine vs. Fraud Jobs") + xlab("Fraud Flag") + ylab("Job Count") + theme_bw()
+
+```
+
+# #################################################################################################
+# Distribution of degrees
+# #################################################################################################
+
+```{r}
+degree_distribution <- JobPosting_Data %>% group_by(required_education, fraudulent) %>% summarise(count = n())
+degree_distribution <- degree_distribution[!(is.na(degree_distribution$required_education) | degree_distribution$required_education==""), ]
+
+
+degree_distribution %>%  ggplot(aes(reorder(
+  degree_distribution$required_education, -degree_distribution$count), degree_distribution$count)) +
+  geom_bar(stat = "identity", aes(fill = fraudulent)) + 
+  theme(axis.text.x = element_text(angle = 90, size = 10)) + 
+  ggtitle("Jobs Per Required Education Feature") + xlab("Required Education") + ylab("Job Count")
+
+```
+
+# #################################################################################################
+# Distribution of experience
+# #################################################################################################
+
+```{r}
+experience_distribution <- JobPosting_Data %>% group_by(required_experience, fraudulent) %>% summarise(count = n())
+experience_distribution <- experience_distribution[!(is.na(experience_distribution$required_experience) | experience_distribution$required_experience==""), ]
+
+
+experience_distribution %>%  ggplot(aes(reorder(
+  experience_distribution$required_experience, -experience_distribution$count), experience_distribution$count)) +
+  geom_bar(stat = "identity", aes(fill = fraudulent)) + 
+  theme(axis.text.x = element_text(angle = 90, size = 10)) + 
+  ggtitle("Jobs Per Required Experience Feature") + xlab("Required Experience") + ylab("Job Count")
+
+
+```
+
+# #################################################################################################
+# Distribution of Employment Types
+# #################################################################################################
+
+```{r}
+employment_type_distribution <- JobPosting_Data %>% group_by(employment_type, fraudulent) %>% summarise(count = n())
+employment_type_distribution <- employment_type_distribution[!(is.na(employment_type_distribution$employment_type) | employment_type_distribution$employment_type==""), ]
+
+employment_type_distribution %>%  ggplot(aes(reorder(
+  employment_type_distribution$employment_type, -employment_type_distribution$count), employment_type_distribution$count)) +
+  geom_bar(stat = "identity", aes(fill = fraudulent)) + 
+  theme(axis.text.x = element_text(angle = 90, size = 10)) + 
+  ggtitle("Jobs Per Required Employment Types Feature") + xlab("Employment Type") + ylab("Job Count")
+
+```
+
+
+# #################################################################################################
+# Distribution of experience and education
+# #################################################################################################
+
+```{r}
+
+
+JobPosting_Data %>% group_by(required_education) %>% ggplot(aes(x = required_education), group = required_experience) +
+  geom_bar(aes(fill = JobPosting_Data$required_experience), stat = "count") + 
+  theme(axis.text.x = element_text(angle = 90, size = 10)) + 
+  ggtitle("Jobs Per Required Education and Experience") + xlab("Required Education") + 
+  ylab("Job Count") + labs(fill='Required Experience')
+
+
+```
+
+
+# #################################################################################################
+# Distribution of experience and employment type
+# #################################################################################################
+
+```{r}
+JobPosting_Data %>% group_by(employment_type) %>% ggplot(aes(x = employment_type), group = required_experience) +
+  geom_bar(aes(fill = JobPosting_Data$required_experience), stat = "count") + 
+  theme(axis.text.x = element_text(angle = 90, size = 10)) + 
+  ggtitle("Jobs Per Required Experience") + xlab("Employment Type") + 
+  ylab("Job Count") + labs(fill='Required Experience')
+
+```
+
+
+# #################################################################################################
+# Distribution of education and employment type
+# #################################################################################################
+
+```{r}
+
+
+JobPosting_Data %>% group_by(employment_type) %>% ggplot(aes(x = employment_type), group = required_education) +
+  geom_bar(aes(fill = JobPosting_Data$required_education), stat = "count") + 
+  theme(axis.text.x = element_text(angle = 90, size = 10)) + 
+  ggtitle("Jobs Per Required Education") + xlab("Employment Type") + 
+  ylab("Job Count") + labs(fill='Education Level')
+
+
+```
+
+# #################################################################################################
+# Getting empty values column-wise
+# #################################################################################################
+
+```{r}
+
+levels(JobPosting_Data$benefits)<-c(levels(JobPosting_Data$benefits),"None")  #Add the extra level to your factor
+JobPosting_Data$benefits[is.na(JobPosting_Data$benefits)] <- "None"
+
+EmptyValues_df <- JobPosting_Data %>% summarise(Empty_JobIDs = sum(job_id == ""), Empty_Titles = sum(title == ""), 
+                                                Empty_Locations = sum(location == ""),
+                                                Empty_Depts = sum(department == ""), Empty_SalRanges = sum(salary_range == ""),
+                                                Empty_CompanyProfiles = sum(company_profile ==""), Empty_Desciptions = sum(description == ""),
+                                                Empty_Requirements = sum(requirements == ""), Empty_Benefits = sum(benefits == ""),
+                                                Empty_Telecommuting = sum(telecommuting ==""), Empty_HasLogo = sum(has_company_logo == ""),
+                                                Empty_HasQuestions = sum(has_questions == ""),Empty_EmpType = sum(employment_type == ""),
+                                                Empty_ReqExperience = sum(required_experience == ""), Empty_ReqEducation = sum(required_education ==""),
+                                                Empty_Industry = sum(industry == ""), Empty_Function = sum(function. == ""),
+                                                Empty_Fraudulent = sum(fraudulent == ""))
+EmptyValues_df <- as.data.frame(t(EmptyValues_df))
+EmptyValues_df$Names <- rownames(EmptyValues_df)
+print(EmptyValues_df)
+```
+
+
+# ##################################################################################################
+# Feature Extraction Process
+# ##################################################################################################
+
+```{r}
+# Identify genuine job postings
+JobPosting_genuine <- JobPosting_Data %>% filter(fraudulent == 0)
+# Convert the factor column into a char column
+JobPosting_Data$description <- as.character(JobPosting_Data$description)
+# COnvert that to a dataframe
+description <- as.data.frame(JobPosting_genuine$description)
+print(description)
+```
+
+# ##################################################################################################
+# convert all desctiption data to lower case
+# ##################################################################################################
+
+```{r}
+
+count <- seq(1, nrow(description), 1)
+
+
+lower_description <- sapply(count, function(c){
+  tolower(description[c, 1])
+})
+
+```
+
+# ##################################################################################################
+# We could all of them in one loop but for more understanding, I did it in separate
+# loops. This will slow dows the process but thats fine !
+# ##################################################################################################
+
+```{r}
+
+del_special_chars_description <- sapply(count, function(l){
+  #swap out all non-alphanumeric characters.
+  str_replace_all(lower_description[l], "[^[:alnum:]]", " ")
+})
+
+```
+
+# ##################################################################################################
+# Delete stop words from the rest
+# Convert first this into a Corpus object
+# ##################################################################################################
+
+```{r}
+del_special_chars_description <- VCorpus(VectorSource(del_special_chars_description))
+# Remove the stop words
+del_special_chars_description = tm_map(del_special_chars_description, removeWords, stopwords(kind = "en"))
+# Remove punctuation
+del_special_chars_description <- tm_map(del_special_chars_description, removePunctuation)
+
+```
+
+# ##################################################################################################
+# White space cleanup
+# ##################################################################################################
+
+```{r}
+
+white_space_cleanup_description <- tm_map(del_special_chars_description, stripWhitespace)
+
+stemming_description <- tm_map(white_space_cleanup_description, stemDocument)
+
+```
+
+# ##################################################################################################
+# Feature Extraction
+#perform stemming - this should always be performed after text doc conversion
+# ##################################################################################################
+
+```{r}
+
+text_description <- tm_map(stemming_description, stemDocument,language = "english")
+print(as.character(text_description[[1]]))
+text_description[[1]]$content
+
+```
+
+# ##################################################################################################
+#convert to document term matrix
+# ##################################################################################################
+
+```{r}
+#convert to document term matrix
+docterm_corpus_description <- DocumentTermMatrix(text_description)
+#inspect(docterm_corpus_description)
+#convert to term document matrix
+docterm_corpus_description2 <- TermDocumentMatrix(text_description)
+#inspect(docterm_corpus_description2)
+
+description_matrix <- as.matrix(docterm_corpus_description2)
+
+v <- sort(rowSums(description_matrix),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+head(d, 10)
+```
+
+# ##################################################################################################
+# The importance of words can be illustrated as a word cloud as follow :
+# ##################################################################################################
+
+```{r}
+set.seed(2020)
+wordcloud(words = d$word, freq = d$freq, min.freq = 1,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+```
+
+# ##################################################################################################
+# This is for overall fake job description column
+# ##################################################################################################
+
+```{r, fig.width=12,fig.height=10}
+
+JobPosting_fake <- JobPosting_Data %>% filter(fraudulent == 1)
+
+description_fake <- as.data.frame(JobPosting_fake$description)
+
+count <- seq(1, nrow(description_fake), 1)
+
+lower_description_fake <- sapply(count, function(c){
+  tolower(description_fake[c, 1])
+})
+
+# We could all of them in one loop but for more understanding, I did it in separate
+# loops. This will slow dows the process but thats fine !
+del_special_chars_description_fake <- sapply(count, function(l){
+  #swap out all non-alphanumeric characters.
+  str_replace_all(lower_description_fake[l], "[^[:alnum:]]", " ")
+})
+
+```
+
+# ##################################################################################################
+# Delete stop words from the rest
+# Convert first this into a Corpus object
+# ##################################################################################################
+
+```{r}
+del_special_chars_description_fake <- VCorpus(VectorSource(del_special_chars_description_fake))
+# Remove the stop words
+del_special_chars_description_fake = tm_map(del_special_chars_description_fake, removeWords, stopwords(kind = "en"))
+
+del_special_chars_description_fake <- tm_map(del_special_chars_description_fake, removePunctuation)
+
+# White space cleanup
+white_space_cleanup_description_fake <- tm_map(del_special_chars_description_fake, stripWhitespace)
+
+#Stemming
+stemming_description_fake <- tm_map(white_space_cleanup_description_fake, stemDocument)
+
+```
+
+# ##################################################################################################
+# Feature Extraction
+#perform stemming - this should always be performed after text doc conversion
+# ##################################################################################################
+
+```{r}
+text_description_fake <- tm_map(stemming_description_fake, stemDocument,language = "english")
+
+#convert to document term matrix
+docterm_corpus_description_fake <- DocumentTermMatrix(text_description_fake)
+inspect(docterm_corpus_description_fake)
+
+docterm_corpus_description_fake2 <- TermDocumentMatrix(text_description_fake)
+inspect(docterm_corpus_description_fake2)
+
+description_matrix_fake <- as.matrix(docterm_corpus_description_fake2)
+
+v_fake <- sort(rowSums(description_matrix_fake),decreasing=TRUE)
+d_fake <- data.frame(word = names(v_fake),freq=v_fake)
+head(d_fake, 10)
+
+```
+
+# ##################################################################################################
+# The importance of words can be illustrated as a word cloud as follow :
+# ##################################################################################################
+
+```{r}
+set.seed(2020)
+wordcloud(words = d_fake$word, freq = d_fake$freq, min.freq = 1,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+
+```
+
